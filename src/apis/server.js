@@ -329,7 +329,11 @@ app.post('/addApplication', (req, res) => {
             res.status(400).send('Application already exists');
             return;
         }
-        jsonData[name] = api;
+        // 创建包含 apiKey 和默认 apiUrl 的对象
+        jsonData[name] = {
+            apiKey: api, // 从请求体获取的 api 值作为 apiKey
+            apiUrl: "https://api.dify.ai/v1" // 使用默认的 apiUrl
+        };
 
         fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
             if (err) {
