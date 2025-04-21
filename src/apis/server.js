@@ -78,7 +78,7 @@ app.post('/login', (req, res) => {
     // ------------- 当前临时逻辑结束 -----------
 });
 
-// 获取dify_keys数据
+// 获取dify_keys数据 (修改：返回完整结构)
 app.get('/getDify_keys', (req, res) => {
     fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) {
@@ -87,14 +87,31 @@ app.get('/getDify_keys', (req, res) => {
         }
         try {
             const jsonData = JSON.parse(data);
-            const apiKeys = {};
-            // 遍历原始数据，提取 apiKey
-            for (const appName in jsonData) {
-                if (jsonData.hasOwnProperty(appName) && jsonData[appName].apiKey) {
-                    apiKeys[appName] = jsonData[appName].apiKey;
-                }
+            res.json(jsonData); // 直接返回完整的嵌套结构
+        } catch (parseError) {
+            console.error("Error parsing dify_keys.json:", parseError);
+            res.status(500).send('Error parsing data file');
+        }
+    });
+});
+
+// 新增：获取指定文件夹下所有卡片的接口
+app.get('/getCardsInFolder/:folderKey', (req, res) => {
+    const { folderKey } = req.params;
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) {
+            res.status(500).send('Error reading data file');
+            return;
+        }
+        try {
+            const jsonData = JSON.parse(data);
+            if (!jsonData[folderKey]) {
+                return res.status(404).send('Folder not found');
             }
-            res.json(apiKeys); // 返回只包含 apiKey 的对象
+            
+            // 如果文件夹存在但没有cards字段，返回空数组
+            const cards = jsonData[folderKey].cards || [];
+            res.json(cards);
         } catch (parseError) {
             console.error("Error parsing dify_keys.json:", parseError);
             res.status(500).send('Error parsing data file');
@@ -117,7 +134,7 @@ app.get('/TestTs', (req, res) => {
 app.post('/updateKeysData', (req, res) => {
     const { originalName, newName, newValue } = req.body;
 
-    // 先更新dify_keys.json
+    // 读取配置文件
     fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) {
             console.error(err);
@@ -126,11 +143,24 @@ app.post('/updateKeysData', (req, res) => {
         }
 
         const jsonData = JSON.parse(data);
+        // 检查原始文件夹是否存在
+        if (!jsonData[originalName]) {
+            res.status(404).send('Folder not found');
+            return;
+        }
+        
+        // 获取原始文件夹完整配置
+        const folderData = jsonData[originalName];
+        
+        // 使用新的apiKey
+        folderData.apiKey = newValue;
+        
+        // 如果名称需要改变
         if (originalName !== newName && newName.trim() !== "") {
-            delete jsonData[originalName]; // 删除旧键
-            jsonData[newName] = newValue; // 添加新键
+            delete jsonData[originalName]; // 删除旧文件夹
+            jsonData[newName] = folderData; // 用新名称创建文件夹
         } else {
-            jsonData[originalName] = newValue; // 只更新值
+            jsonData[originalName] = folderData; // 只更新值
         }
 
         fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
@@ -139,48 +169,12 @@ app.post('/updateKeysData', (req, res) => {
                 res.status(500).send('Error writing to file');
                 return;
             }
-
-            // 现在更新openai.ts文件
-            fs.readFile(openAiTsFile, 'utf8', (err, fileContent) => {
-                if (err) {
-                    console.error(err);
-                    res.status(500).send('Error reading openai.ts');
-                    return;
-                }
-
-                // 更新OpenAIModelID枚举成员
-                const enumPattern = new RegExp(`(${originalName}\\s+=\\s+')${originalName}(',)`, 'g');
-                fileContent = fileContent.replace(enumPattern, `${newName} = '${newName}$2`);
-
-                const modelPattern = new RegExp(`\\[OpenAIModelID.${originalName}\\]:\\s+{[^}]+},?\\s+`, 'g');
-                const str = `
-[OpenAIModelID.${newName}]: {
-    id: OpenAIModelID.${newName},
-    name: '${newName}',
-    maxLength: 12000,
-    tokenLimit: 4000,
-    key: keys['${newName}'] || process.env.DIFY_API_KEY || '',
-},\n`;
-                fileContent = fileContent.replace(modelPattern, str);
-
-
-
-
-                // 更新OpenAIModels对象中的key属性不需要额外的正则替换，因为key的更新已经在上面的代码中处理
-
-                // 写回更新后的openai.ts
-                fs.writeFile(openAiTsFile, fileContent, 'utf8', (err) => {
-                    if (err) {
-                        console.error(err);
-                        res.status(500).send('Error writing to openai.ts');
-                        return;
-                    }
-                    res.send('Data updated successfully');
-                });
-            });
+            
+            res.send('Data updated successfully');
         });
     });
 });
+
 // 删除dify_keys数据
 app.post('/editChatName', (req, res) => {
     const { originalName, newName } = req.body;
@@ -252,129 +246,125 @@ app.post('/editTeacherChatName', (req, res) => {
         });
     });
 });
-app.post('/deleteKeyData', (req, res) => {
-    const { name } = req.body;
 
-    // 先处理dify_keys.json
+// 新增：删除文件夹接口 (替代 /deleteKeyData)
+app.post('/deleteFolder', (req, res) => {
+    const { folderKey } = req.body; // 前端发送的是 folderKey
+
+    if (!folderKey) {
+        return res.status(400).send('Folder key is required.');
+    }
+
     fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) {
-            console.error(err);
-            res.status(500).send('Error reading from file');
-            return;
+            console.error("Error reading dify_keys.json:", err);
+            return res.status(500).send('Error reading data file');
         }
+        
+        try {
         const jsonData = JSON.parse(data);
 
-        // 检查要删除的键是否存在
-        if (!jsonData.hasOwnProperty(name)) {
-            res.status(404).send('Key not found');
-            return;
-        }
-
-        // 删除键
-        delete jsonData[name];
-
-        // 将更新后的数据写回文件
-        fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
-            if (err) {
-                console.error(err);
-                res.status(500).send('Error writing to file');
-                return;
+            // 1. 检查文件夹是否存在
+            if (!jsonData[folderKey]) {
+                return res.status(404).send('Folder not found');
             }
 
-            // 现在处理openai.ts文件
-            fs.readFile(openAiTsFile, 'utf8', (err, fileContent) => {
-                if (err) {
-                    console.error(err);
-                    res.status(500).send('Error reading openai.ts');
-                    return;
-                }
+            // 2. 检查文件夹下是否有卡片
+            const folderToDelete = jsonData[folderKey];
+            if (folderToDelete.cards && Array.isArray(folderToDelete.cards) && folderToDelete.cards.length > 0) {
+                return res.status(400).send('Cannot delete folder because it contains cards. Please delete the cards first.');
+            }
 
-                // 删除OpenAIModelID枚举成员
-                const enumPattern = new RegExp(`\\s+${name}\\s+=\\s+'${name}',?`, 'g');
-                fileContent = fileContent.replace(enumPattern, '');
+            // 3. 执行删除
+            delete jsonData[folderKey];
 
-                // 删除OpenAIModels对象中的属性
-                const modelPattern = new RegExp(`\\s+\\[OpenAIModelID.${name}\\]:\\s+{[\\s\\S]+?\\},?`, 'g');
-                fileContent = fileContent.replace(modelPattern, '');
-
-                // 写回更新后的openai.ts
-                fs.writeFile(openAiTsFile, fileContent, 'utf8', (err) => {
-                    if (err) {
-                        console.error(err);
-                        res.status(500).send('Error writing to openai.ts');
-                        return;
-                    }
-                    res.send('Data deleted successfully');
-                });
-            });
+            // 4. 写回文件
+        fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+            if (err) {
+                    console.error("Error writing dify_keys.json after delete:", err);
+                    return res.status(500).send('Error writing data file');
+            }
+                res.send('Folder deleted successfully');
         });
+        } catch (parseError) {
+            console.error("Error processing dify_keys.json for delete:", parseError);
+            res.status(500).send('Error processing data file');
+        }
     });
 });
 
 
-// 添加dify_keys数据
-app.post('/addApplication', (req, res) => {
-    const { name, api } = req.body;
+// 新增：添加文件夹接口 (替代 /addApplication)
+app.post('/addFolder', (req, res) => {
+    const { displayName } = req.body; // 只从请求体获取 displayName
 
-    // 读取并更新dify_keys.json
+    if (!displayName || displayName.trim() === "") {
+        return res.status(400).send('Display name is required.');
+    }
+
+    // 1. 读取现有数据
     fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) {
-            console.error(err);
-            res.status(500).send('Error reading from file');
-            return;
+            console.error("Error reading dify_keys.json:", err);
+            return res.status(500).send('Error reading data file');
         }
 
+        try {
         const jsonData = JSON.parse(data);
-        if (jsonData.hasOwnProperty(name)) {
-            res.status(400).send('Application already exists');
-            return;
-        }
-        // 创建包含 apiKey 和默认 apiUrl 的对象
-        jsonData[name] = {
-            apiKey: api, // 从请求体获取的 api 值作为 apiKey
-            apiUrl: "https://api.dify.ai/v1" // 使用默认的 apiUrl
+
+            // 2. 生成 folderKey (使用 UUID v4)
+            const folderKey = uuidv4(); 
+            // 理论上 UUID 冲突概率极低，无需检查冲突
+            // // 2. 生成 folderKey (基于 displayName, 转小写，空格转下划线，移除特殊字符)
+            // //    并检查冲突
+            // let baseFolderKey = displayName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            // let folderKey = baseFolderKey;
+            // let counter = 1;
+            // // 如果生成的 key 已存在，尝试添加数字后缀
+            // while (jsonData[folderKey]) {
+            //     folderKey = `${baseFolderKey}_${counter}`;
+            //     counter++;
+            //     // 可以加一个最大尝试次数限制，防止无限循环
+            //     if (counter > 100) { 
+            //          console.error("Failed to generate a unique folderKey for:", displayName);
+            //          return res.status(500).send('Could not generate a unique identifier for the folder.');
+            //     }
+            // }
+
+            // 3. 计算下一个 appId
+            let maxAppId = -1; // 从-1开始，确保即使只有一个 global 也能正确生成
+            Object.values(jsonData).forEach(folder => {
+                // 确保 appId 是数字类型再比较
+                const currentAppId = parseInt(folder.appId, 10);
+                if (!isNaN(currentAppId) && currentAppId > maxAppId) {
+                    maxAppId = currentAppId;
+                }
+            });
+            const newAppId = maxAppId + 1;
+
+            // 4. 创建新文件夹对象
+            const newFolderData = {
+                appId: newAppId,
+                displayName: displayName.trim(), // 使用 trim 后的 displayName
+            cards: [] // 初始化空卡片数组
         };
+
+            // 5. 添加到 jsonData 并写回文件
+            jsonData[folderKey] = newFolderData;
 
         fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
             if (err) {
-                console.error(err);
-                res.status(500).send('Error writing to file');
+                    console.error("Error writing dify_keys.json:", err);
+                    res.status(500).send('Error writing data file');
                 return;
             }
-
-            // 读取并更新openai.ts
-            fs.readFile(openAiTsFile, 'utf8', (err, fileContent) => {
-                if (err) {
-                    console.error(err);
-                    res.status(500).send('Error reading openai.ts');
-                    return;
-                }
-
-                // 插入新的枚举成员到OpenAIModelID
-                const enumPattern = /export enum OpenAIModelID {([\s\S]*?)\n}/;
-                const enumMatch = fileContent.match(enumPattern);
-                if (enumMatch) {
-                    const newEnumMember = `\n  ${name} = '${name}',\n`;
-                    const newEnumString = enumMatch[0].replace(/\n}/, `${newEnumMember}}`);
-                    fileContent = fileContent.replace(enumPattern, newEnumString);
-                }
-
-                // 插入新的OpenAIModels对象属性
-                const modelInsertPoint = fileContent.indexOf('};', fileContent.lastIndexOf('export const OpenAIModels'));
-                const newModelObject = `  [OpenAIModelID.${name}]: {\n    id: OpenAIModelID.${name},\n    name: '${name}',\n    maxLength: 12000,\n    tokenLimit: 4000,\n    key: keys['${name}'] || process.env.DIFY_API_KEY || '',\n  },\n`;
-                const finalUpdatedContent = [fileContent.slice(0, modelInsertPoint), newModelObject, fileContent.slice(modelInsertPoint)].join('');
-
-                // 写回更新后的openai.ts
-                fs.writeFile(openAiTsFile, finalUpdatedContent, 'utf8', (err) => {
-                    if (err) {
-                        console.error(err);
-                        res.status(500).send('Error writing to openai.ts');
-                        return;
-                    }
-                    res.send('Application added successfully');
-                });
-            });
+                // 返回成功信息，可以包含新创建的数据
+                res.status(201).json({ message: 'Folder added successfully', folderKey: folderKey, data: newFolderData });
         });
+        } catch (parseError) {
+            console.error("Error processing dify_keys.json:", parseError);
+            res.status(500).send('Error processing data file');
+        }
     });
 });
 
@@ -676,41 +666,37 @@ app.get('/getPrompts', (req, res) => {
 
 
 app.post('/addFolder', (req, res) => {
-    const { name, type, deletable } = req.body;
-
-    // 简单的验证
-    if (!name || !type) {
-        return res.status(400).send('Name and type are required');
-    }
-
-    // 读取现有的JSON文件
-    fs.readFile(studentChatPath, (err, data) => {
+    const { folderKey, folderData } = req.body;
+    
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) {
-            console.error('Failed to read JSON file:', err);
-            return res.status(500).send('Failed to read data');
+            res.status(500).send('Error reading data file');
+            return;
         }
-
-        // 解析JSON数据
-        const json = JSON.parse(data.toString());
-        const newFolder = {
-            id: uuidv4(), // 生成唯一ID
-            name,
-            type,
-            deletable: !!deletable,
-        };
-
-        // 添加新文件夹到Folders数组
-        json.Folders.push(newFolder);
-
-        // 将更新后的数据写回JSON文件
-        fs.writeFile(studentChatPath, JSON.stringify(json, null, 2), (err) => {
-            if (err) {
-                console.error('Failed to write JSON file:', err);
-                return res.status(500).send('Failed to save data');
+        
+        try {
+            const jsonData = JSON.parse(data);
+            if (jsonData[folderKey]) {
+                return res.status(400).send('Folder already exists');
             }
-
-            res.status(201).json(newFolder);
-        });
+            
+            // 创建新文件夹，并初始化空cards数组
+            jsonData[folderKey] = {
+                ...folderData,
+                cards: []
+            };
+            
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) {
+                    res.status(500).send('Error writing data file');
+                    return;
+                }
+                res.send('Folder added successfully');
+            });
+        } catch (parseError) {
+            console.error("Error parsing dify_keys.json:", parseError);
+            res.status(500).send('Error parsing data file');
+        }
     });
 });
 
@@ -1210,7 +1196,6 @@ app.post('/updatePromptsOrder', async (req, res) => {
     }
 });
 
-
 app.post('/updateHelpData', (req, res) => {
     const newData = req.body;
     fs.writeFileSync(helpPath, JSON.stringify(newData, null, 2));
@@ -1397,6 +1382,200 @@ app.post('/api/rebuild-and-restart', (req, res) => {
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
 });
+
+// 修改 CORS 配置，允许来自 3000 和 3002 端口的请求
 app.use(cors({
-    origin: 'http://localhost:3000' // 只允许来自此源的请求
+    origin: ['http://localhost:3000', 'http://localhost:3002'] // 明确列出允许的源
+    // 或者，如果开发环境不严格，可以更宽松，但不推荐用于生产:
+    // origin: '*', // 允许所有源
+    // origin: true // 反射请求源
 }));
+
+// ######## 卡片管理接口 ########
+
+// 新增：添加卡片接口
+app.post('/addCard', (req, res) => {
+    const { folderKey, cardData } = req.body; // 主要用 cardData 里的信息
+
+    if (!folderKey || !cardData || !cardData.cardId || !cardData.name || !cardData.difyConfig || !cardData.difyConfig.apiKey) {
+        return res.status(400).send('Missing required fields: folderKey, cardId, name, difyConfig.apiKey.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+
+            // 1. 检查文件夹是否存在
+            if (!jsonData[folderKey]) {
+                return res.status(404).send('Target folder not found');
+            }
+
+            // 确保 cards 数组存在
+            if (!jsonData[folderKey].cards || !Array.isArray(jsonData[folderKey].cards)) {
+                jsonData[folderKey].cards = [];
+            }
+
+            // 2. 检查卡片 ID 是否已存在于该文件夹
+            const cardExists = jsonData[folderKey].cards.some(card => card.cardId === cardData.cardId);
+            if (cardExists) {
+                return res.status(409).send('Card with this ID already exists in the folder'); // 409 Conflict
+            }
+
+            // 3. 清理并准备新卡片数据 (只取需要的字段)
+            const newCard = {
+                cardId: cardData.cardId,
+                name: cardData.name,
+                iconName: cardData.iconName || "", // 确保有默认值
+                difyConfig: {
+                    apiKey: cardData.difyConfig.apiKey,
+                    apiUrl: cardData.difyConfig.apiUrl || 'https://api.dify.ai/v1' // 确保有默认值
+                }
+            };
+
+            // 4. 添加卡片到数组
+            jsonData[folderKey].cards.push(newCard);
+
+            // 5. 写回文件
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.status(201).json({ message: 'Card added successfully', data: newCard });
+            });
+        } catch (parseError) {
+            console.error("Error processing addCard:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 新增：更新卡片接口
+app.post('/updateCard', (req, res) => {
+    const { folderKey, cardId, cardData } = req.body; // cardId 用于定位，cardData 是新数据
+
+    if (!folderKey || !cardId || !cardData || !cardData.name || !cardData.difyConfig || !cardData.difyConfig.apiKey) {
+        return res.status(400).send('Missing required fields for update.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+
+            // 1. 检查文件夹是否存在
+            if (!jsonData[folderKey] || !jsonData[folderKey].cards || !Array.isArray(jsonData[folderKey].cards)) {
+                return res.status(404).send('Target folder or cards array not found');
+            }
+
+            // 2. 查找要更新的卡片索引
+            const cardIndex = jsonData[folderKey].cards.findIndex(card => card.cardId === cardId);
+            if (cardIndex === -1) {
+                return res.status(404).send('Card not found in the folder');
+            }
+
+            // 3. 准备更新后的卡片数据 (保留原始 cardId)
+            const updatedCard = {
+                cardId: cardId, // ID 一般不更新
+                name: cardData.name,
+                iconName: cardData.iconName || "",
+                difyConfig: {
+                    apiKey: cardData.difyConfig.apiKey,
+                    apiUrl: cardData.difyConfig.apiUrl || 'https://api.dify.ai/v1'
+                }
+            };
+
+            // 4. 更新数组中的卡片
+            jsonData[folderKey].cards[cardIndex] = updatedCard;
+
+            // 5. 写回文件
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.json({ message: 'Card updated successfully', data: updatedCard });
+            });
+        } catch (parseError) {
+            console.error("Error processing updateCard:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 新增：删除卡片接口
+app.post('/deleteCard', (req, res) => {
+    const { folderKey, cardId } = req.body;
+
+    if (!folderKey || !cardId) {
+        return res.status(400).send('Missing required fields: folderKey, cardId.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+
+            // 1. 检查文件夹是否存在
+            if (!jsonData[folderKey] || !jsonData[folderKey].cards || !Array.isArray(jsonData[folderKey].cards)) {
+                return res.status(404).send('Target folder or cards array not found');
+            }
+
+            // 2. 查找要删除的卡片索引
+            const cardIndex = jsonData[folderKey].cards.findIndex(card => card.cardId === cardId);
+            if (cardIndex === -1) {
+                return res.status(404).send('Card not found in the folder');
+            }
+
+            // 3. 从数组中删除卡片
+            jsonData[folderKey].cards.splice(cardIndex, 1);
+
+            // 4. 写回文件
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.send('Card deleted successfully');
+            });
+        } catch (parseError) {
+            console.error("Error processing deleteCard:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 新增：更新文件夹显示名称接口
+app.post('/updateFolder', (req, res) => {
+    const { originalKey, displayName } = req.body; // 前端发送原始 key 和新显示名称
+
+    if (!originalKey || !displayName || displayName.trim() === "") {
+        return res.status(400).send('Original key and display name are required.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { 
+            console.error("Error reading dify_keys.json for updateFolder:", err);
+            return res.status(500).send('Error reading data file'); 
+        }
+
+        try {
+            const jsonData = JSON.parse(data);
+
+            // 1. 检查文件夹是否存在
+            if (!jsonData[originalKey]) {
+                return res.status(404).send('Folder not found');
+            }
+
+            // 2. 更新 displayName (确保只更新 displayName)
+            jsonData[originalKey].displayName = displayName.trim();
+
+            // 3. 写回文件
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { 
+                    console.error("Error writing dify_keys.json after updateFolder:", err);
+                    return res.status(500).send('Error writing data file'); 
+                }
+                res.json({ message: 'Folder display name updated successfully', data: jsonData[originalKey] });
+            });
+        } catch (parseError) {
+            console.error("Error processing dify_keys.json for updateFolder:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
