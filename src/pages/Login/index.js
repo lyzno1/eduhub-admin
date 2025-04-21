@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {Card, Form, Input, Button, message} from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { API_URL } from '../../config/config';
-import bcrypt from 'bcryptjs';
+// import bcrypt from 'bcryptjs';
 
 import {useAuth} from "../../context/AuthContext";
 

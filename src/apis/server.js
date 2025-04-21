@@ -46,16 +46,36 @@ app.post('/login', (req, res) => {
     console.log("登录请求")
     console.log(req.body);
     const { username, password } = req.body;
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    const salt = "$2a$10$lAOe6jrPoDOI4tJarzjpBO";
-    const user = data.users.find(u => u.username === username);
-    console.log("@@@@@@@@@@@@@@@@@")
 
-    if (user && bcrypt.compareSync(password, user.password)) {
-        res.json({ success: true, message: '登录成功' });
-    } else {
-        res.status(401).json({ success: false, message: '用户名或密码错误' });
+    // ------------- 原始逻辑 (已注释) -------------
+    // const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    // // const salt = "$2a$10$lAOe6jrPoDOI4tJarzjpBO"; // Salt 可能用于密码哈希，此处注释
+    // const user = data.users.find(u => u.username === username);
+    // console.log("@@@@@@@@@@@@@@@@@") // 原始调试输出
+    //
+    // if (user && bcrypt.compareSync(password, user.password)) {
+    //     res.json({ success: true, message: '登录成功' });
+    // } else {
+    //     res.status(401).json({ success: false, message: '用户名或密码错误' });
+    // }
+    // ------------- 原始逻辑结束 -------------
+
+    // ------------- 当前临时逻辑 ------------- 
+    try {
+        const accountData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+        // 直接比较 account.json 中的用户名和明文密码
+        if (accountData.username === username && accountData.password === password) {
+            // 注意：这里使用了明文密码比较，不安全，仅为临时修改
+            res.json({ success: true, message: '登录成功' });
+        } else {
+            res.status(401).json({ success: false, message: '用户名或密码错误' });
+        }
+    } catch (error) {
+        console.error("读取或解析 account.json 出错:", error);
+        res.status(500).json({ success: false, message: '服务器内部错误' });
     }
+    // ------------- 当前临时逻辑结束 -----------
 });
 
 // 获取dify_keys数据
@@ -65,8 +85,20 @@ app.get('/getDify_keys', (req, res) => {
             res.status(500).send('Error reading data file');
             return;
         }
-        res.json(JSON.parse(data));
-        console.log("res.json", res.json)
+        try {
+            const jsonData = JSON.parse(data);
+            const apiKeys = {};
+            // 遍历原始数据，提取 apiKey
+            for (const appName in jsonData) {
+                if (jsonData.hasOwnProperty(appName) && jsonData[appName].apiKey) {
+                    apiKeys[appName] = jsonData[appName].apiKey;
+                }
+            }
+            res.json(apiKeys); // 返回只包含 apiKey 的对象
+        } catch (parseError) {
+            console.error("Error parsing dify_keys.json:", parseError);
+            res.status(500).send('Error parsing data file');
+        }
     });
 });
 
