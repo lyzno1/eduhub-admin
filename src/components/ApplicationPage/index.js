@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+﻿import React, {useEffect, useState} from 'react';
 import {Table, Button, Popconfirm, Form, Modal, Input, message, Tag, Collapse} from 'antd';
 import { API_URL } from '../../config/config';
 import { DownOutlined } from '@ant-design/icons';
@@ -79,11 +79,11 @@ const ApplicationPage = () => {
                     : (record.cardCount > 0 ? "请先删除文件夹下的所有卡片应用。" : "确定删除此文件夹吗?");
 
                 return (
-                    <>
+                    <div onClick={(e) => e.stopPropagation()}>
                         <Button type="link" onClick={() => handleEditFolder(record)}>修改名称</Button>
-                        <Button 
-                            type="link" 
-                            onClick={() => handleAddCard(record.folderKey)} 
+                        <Button
+                            type="link"
+                            onClick={() => handleAddCard(record.folderKey)}
                             disabled={isGlobal}
                             title={isGlobal ? "全局文件夹不能添加卡片" : "添加卡片"}
                         >
@@ -92,13 +92,13 @@ const ApplicationPage = () => {
                         <Popconfirm
                             title={deleteTooltip}
                             onConfirm={() => handleDeleteFolder(record.folderKey)}
-                            disabled={deleteDisabled} 
+                            disabled={deleteDisabled}
                         >
                             <Button type="link" danger disabled={deleteDisabled}>
                                 删除文件夹
                             </Button>
                         </Popconfirm>
-                    </>
+                    </div>
                 );
             },
         },
@@ -448,6 +448,7 @@ const ApplicationPage = () => {
                 expandable={{
                     expandedRowRender,
                     rowExpandable: record => record.cards && record.cards.length > 0,
+                    expandRowByClick: true,
                     expandIcon: ({ expanded, onExpand, record }) =>
                         record.cards && record.cards.length > 0 ? (
                             <DownOutlined
