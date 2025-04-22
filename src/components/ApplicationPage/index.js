@@ -2,6 +2,50 @@ import React, {useEffect, useState} from 'react';
 import {Table, Button, Popconfirm, Form, Modal, Input, message, Tag, Collapse} from 'antd';
 import { API_URL } from '../../config/config';
 import { DownOutlined } from '@ant-design/icons';
+// 导入所有前端 Chat.tsx 中使用的 Tabler 图标
+import {
+    IconTestPipe,
+    IconCode,
+    IconInfoCircle,
+    IconHelp,
+    IconMoodBoy,
+    IconWorldWww,
+    IconDatabase,
+    IconBook,
+    IconMessageChatbot,
+    IconPencil,
+    IconMessageCircleQuestion,
+    IconBulb,
+    IconPresentation,
+    IconListDetails,
+    IconCheckbox,
+    IconMessageReport,
+    IconUsers,
+    IconQuestionMark,
+    // 你可以根据需要在这里添加更多图标
+} from '@tabler/icons-react';
+
+// 创建图标名称到组件的映射
+const availableIcons = {
+    'IconTestPipe': IconTestPipe,
+    'IconCode': IconCode,
+    'IconInfoCircle': IconInfoCircle,
+    'IconHelp': IconHelp,
+    'IconMoodBoy': IconMoodBoy,
+    'IconWorldWww': IconWorldWww,
+    'IconDatabase': IconDatabase,
+    'IconBook': IconBook,
+    'IconMessageChatbot': IconMessageChatbot,
+    'IconPencil': IconPencil,
+    'IconMessageCircleQuestion': IconMessageCircleQuestion,
+    'IconBulb': IconBulb,
+    'IconPresentation': IconPresentation,
+    'IconListDetails': IconListDetails,
+    'IconCheckbox': IconCheckbox,
+    'IconMessageReport': IconMessageReport,
+    'IconUsers': IconUsers,
+    'IconQuestionMark': IconQuestionMark,
+};
 
 const ApplicationPage = () => {
     // 定义文件夹表格的列
@@ -70,13 +114,30 @@ const ApplicationPage = () => {
         {
             title: '卡片ID',
             dataIndex: 'cardId',
-            key: 'cardId',
+            key: 'key', // Key 应该唯一，用 cardId
         },
         {
             title: '图标',
             dataIndex: 'iconName',
             key: 'iconName',
-            render: (icon) => icon ? <Tag>{icon}</Tag> : <Tag>未设置</Tag>,
+            render: (iconName) => {
+                 const IconComponent = availableIcons[iconName];
+                 if (IconComponent) {
+                     // 如果找到了对应的组件，渲染图标和名称Tag
+                     return (
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                             <IconComponent size={16} stroke={1.5} />
+                             <Tag>{iconName}</Tag>
+                         </div>
+                     );
+                 } else if (iconName) {
+                     // 如果有名称但找不到组件，只显示名称Tag
+                     return <Tag>{iconName}</Tag>;
+                 } else {
+                     // 如果没有设置名称，显示未设置
+                     return <Tag>未设置</Tag>;
+                 }
+            },
         },
         {
             title: 'API Key',
@@ -451,10 +512,64 @@ const ApplicationPage = () => {
                     </Form.Item>
                     <Form.Item
                         name="iconName"
-                        label="图标名称 (可选)"
-                        tooltip="对应 Tabler Icon 名称, 例如: IconPencil。留空则不显示图标。"
+                        label="选择图标 (可选)"
+                        tooltip="点击图标进行选择，再次点击可取消选择。"
                     >
-                        <Input placeholder="例如：IconPencil" />
+                        <Form.Item noStyle shouldUpdate={(prevValues, curValues) => prevValues.iconName !== curValues.iconName}>
+                            {({ getFieldValue, setFieldsValue }) => {
+                                const currentIconName = getFieldValue('iconName');
+                                return (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', maxHeight: '200px', overflowY: 'auto', border: '1px solid #d9d9d9', padding: '10px', borderRadius: '4px' }}>
+                                        {Object.entries(availableIcons).map(([name, IconComponent]) => {
+                                            const isSelected = currentIconName === name;
+                                            return (
+                                                <div
+                                                    key={name}
+                                                    onClick={() => {
+                                                        const newIconName = isSelected ? '' : name;
+                                                        setFieldsValue({ iconName: newIconName });
+                                                    }}
+                                                    style={{
+                                                        padding: '8px',
+                                                        border: isSelected ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        minWidth: '60px',
+                                                        backgroundColor: isSelected ? '#e6f7ff' : '#fff'
+                                                    }}
+                                                    title={name}
+                                                >
+                                                    <IconComponent size={24} stroke={1.5} />
+                                                    <span style={{ fontSize: '10px', marginTop: '4px', color: '#888' }}>{name.replace('Icon','')}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        <div
+                                             onClick={() => setFieldsValue({ iconName: '' })}
+                                             style={{
+                                                 padding: '8px',
+                                                 border: !currentIconName ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                                                 borderRadius: '4px',
+                                                 cursor: 'pointer',
+                                                 display: 'flex',
+                                                 flexDirection: 'column',
+                                                 alignItems: 'center',
+                                                 justifyContent: 'center',
+                                                 minWidth: '60px',
+                                                 height: '62px',
+                                                 backgroundColor: !currentIconName ? '#e6f7ff' : '#fff'
+                                             }}
+                                             title="无图标"
+                                        >
+                                             <span style={{ fontSize: '12px', color: '#888' }}>无图标</span>
+                                        </div>
+                                    </div>
+                                );
+                            }}
+                        </Form.Item>
                     </Form.Item>
                     <Form.Item
                         label="Dify API 配置"
