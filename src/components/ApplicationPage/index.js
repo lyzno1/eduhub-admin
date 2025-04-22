@@ -1,7 +1,7 @@
 ﻿import React, {useEffect, useState} from 'react';
-import {Table, Button, Popconfirm, Form, Modal, Input, message, Tag, Collapse} from 'antd';
+import {Table, Button, Popconfirm, Form, Modal, Input, message, Tag, Collapse, Spin, Card, Row, Col, Divider} from 'antd';
 import { API_URL } from '../../config/config';
-import { DownOutlined } from '@ant-design/icons';
+import { DownOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 // 导入所有前端 Chat.tsx 中使用的 Tabler 图标
 import {
     IconTestPipe,
@@ -169,9 +169,12 @@ const ApplicationPage = () => {
     const [folderForm] = Form.useForm();
     const [cardForm] = Form.useForm();
     const [searchText, setSearchText] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [cardModalLoading, setCardModalLoading] = useState(false);
 
     // 获取文件夹数据
     const fetchFoldersData = () => {
+        setLoading(true);
         fetch(`${API_URL}/getDify_keys`)
             .then(response => response.json())
             .then(data => {
@@ -184,7 +187,8 @@ const ApplicationPage = () => {
                         displayName: folder.displayName || folderKey,
                         appId: folder.appId,
                         cards: cards,
-                        cardCount: cards.length
+                        cardCount: cards.length,
+                        difyConfig: folder.difyConfig
                     };
                 }).sort((a, b) => a.appId - b.appId);
                 setFoldersData(formattedData);
@@ -192,6 +196,9 @@ const ApplicationPage = () => {
             .catch(error => {
                 console.error('Failed to fetch data:', error);
                 message.error('获取应用数据失败: ' + error.message);
+            })
+            .finally(() => {
+                setLoading(false);
             });
     };
 
@@ -215,9 +222,19 @@ const ApplicationPage = () => {
     const handleEditFolder = (folderRecord) => {
         setCurrentEditingFolder(folderRecord);
         setIsFolderModalVisible(true);
-        folderForm.setFieldsValue({
+        console.log('Editing folder record:', JSON.stringify(folderRecord, null, 2));
+
+        const fieldsToSet = {
             displayName: folderRecord.displayName,
-        });
+        };
+        if (folderRecord.folderKey === 'global' && folderRecord.difyConfig) {
+            fieldsToSet.difyConfig = {
+                apiKey: folderRecord.difyConfig.apiKey,
+                apiUrl: folderRecord.difyConfig.apiUrl
+            };
+        }
+        console.log('Fields object for setFieldsValue:', JSON.stringify(fieldsToSet, null, 2));
+        folderForm.setFieldsValue(fieldsToSet);
     };
 
     const handleDeleteFolder = (folderKey) => {
@@ -253,14 +270,27 @@ const ApplicationPage = () => {
             .validateFields()
             .then(values => {
                 const apiEndpoint = currentEditingFolder ? `${API_URL}/updateFolder` : `${API_URL}/addFolder`;
-                const requestBody = currentEditingFolder
-                    ? {
+
+                let requestBody;
+                if (currentEditingFolder) {
+                    requestBody = {
                         originalKey: currentEditingFolder.folderKey,
+                        displayName: values.displayName,
+                    };
+                    if (currentEditingFolder.folderKey === 'global') {
+                        const difyConfigValues = values.difyConfig || {};
+                        requestBody.difyConfig = {
+                            apiKey: difyConfigValues.apiKey || '',
+                            apiUrl: difyConfigValues.apiUrl || ''
+                        };
+                    }
+                } else {
+                    requestBody = {
                         displayName: values.displayName
-                      }
-                    : {
-                        displayName: values.displayName
-                      };
+                    };
+                }
+                
+                console.log('发送到后端的 Folder 数据:', JSON.stringify(requestBody, null, 2));
 
                 fetch(apiEndpoint, {
                     method: 'POST',
@@ -268,19 +298,32 @@ const ApplicationPage = () => {
                     body: JSON.stringify(requestBody),
                 })
                 .then(response => {
+                    console.log('收到后端响应状态:', response.status);
                     if (!response.ok) {
-                        return response.text().then(text => { throw new Error(text || (currentEditingFolder ? '更新文件夹失败' : '添加文件夹失败')); });
+                        return response.text().then(text => {
+                            console.error('后端返回错误文本:', text);
+                            let errorMsg = text;
+                            try {
+                                const errorJson = JSON.parse(text);
+                                errorMsg = errorJson.message || errorJson.error || text;
+                            } catch (e) { /* 忽略解析错误，使用原始文本 */ }
+                            throw new Error(errorMsg || (currentEditingFolder ? '更新文件夹失败' : '添加文件夹失败'));
+                        });
                     }
-                    return response.text();
+                    return response.json();
                 })
-                .then(() => {
+                .then(data => {
+                    console.log('后端成功响应数据:', data);
                     message.success(currentEditingFolder ? '文件夹更新成功' : '文件夹添加成功');
                     setIsFolderModalVisible(false);
                     fetchFoldersData();
                 })
                 .catch(error => {
-                    console.error('Failed to process folder:', error);
-                    message.error('操作失败: ' + error.message);
+                    console.error('处理文件夹操作时捕获到错误:', error);
+                    message.error(`操作失败: ${error.message}`);
+                    if (error.message && typeof error.message === 'string' && error.message.toLowerCase().includes('api key')) {
+                         folderForm.validateFields([['difyConfig', 'apiKey']]);
+                    }
                 });
             })
             .catch(info => {
@@ -430,175 +473,203 @@ const ApplicationPage = () => {
     }, []);
 
     return (
-        <>
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Input
-                    placeholder="搜索应用文件夹"
-                    value={searchText}
-                    onChange={handleSearch}
-                    style={{ width: 240 }}
+        <Card title="应用管理中心" style={{ margin: '20px' }}>
+            <Spin spinning={loading}>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Input
+                        placeholder="搜索应用文件夹"
+                        value={searchText}
+                        onChange={handleSearch}
+                        style={{ width: 240 }}
+                    />
+                    <Button type="primary" onClick={handleAddFolder}>添加应用文件夹</Button>
+                </div>
+                
+                <Table
+                    columns={folderColumns}
+                    dataSource={filteredFoldersData}
+                    rowKey="folderKey"
+                    expandable={{
+                        expandedRowRender,
+                        rowExpandable: record => record.cards && record.cards.length > 0,
+                        expandRowByClick: true,
+                        expandIcon: ({ expanded, onExpand, record }) =>
+                            record.cards && record.cards.length > 0 ? (
+                                <DownOutlined
+                                    onClick={e => onExpand(record, e)}
+                                    rotate={expanded ? 180 : 0}
+                                    style={{ marginRight: 8, cursor: 'pointer' }}
+                                />
+                            ) : <span style={{ marginRight: 24 }}></span>
+                     }}
+                    pagination={{ pageSize: 10 }}
+                    className="application-table"
                 />
-                <Button type="primary" onClick={handleAddFolder}>添加应用文件夹</Button>
-            </div>
-            
-            <Table
-                columns={folderColumns}
-                dataSource={filteredFoldersData}
-                rowKey="folderKey"
-                expandable={{
-                    expandedRowRender,
-                    rowExpandable: record => record.cards && record.cards.length > 0,
-                    expandRowByClick: true,
-                    expandIcon: ({ expanded, onExpand, record }) =>
-                        record.cards && record.cards.length > 0 ? (
-                            <DownOutlined
-                                onClick={e => onExpand(record, e)}
-                                rotate={expanded ? 180 : 0}
-                                style={{ marginRight: 8, cursor: 'pointer' }}
-                            />
-                        ) : <span style={{ marginRight: 24 }}></span>
-                 }}
-                pagination={{ pageSize: 10 }}
-            />
-            
-            {/* 编辑/添加文件夹的模态框 */}
-            <Modal
-                title={currentEditingFolder ? `修改文件夹 - ${currentEditingFolder.displayName} (ID: ${currentEditingFolder.appId})` : "添加新应用文件夹"}
-                visible={isFolderModalVisible}
-                onOk={handleFolderOk}
-                onCancel={() => setIsFolderModalVisible(false)}
-                destroyOnClose
-            >
-                <Form form={folderForm} layout="vertical" name="folderForm">
-                    <Form.Item
-                        name="displayName"
-                        label="显示名称"
-                        rules={[{ required: true, message: '请输入文件夹的显示名称!' }]}
-                    >
-                        <Input placeholder="例如：教师助手" />
-                    </Form.Item>
-                    {currentEditingFolder && (
-                        <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
-                    )}
-                     {!currentEditingFolder && (
-                        <p>应用ID将在保存后自动生成。</p>
-                    )}
-                </Form>
-            </Modal>
-            
-            {/* 编辑/添加卡片的模态框 */}
-            <Modal
-                title={currentEditingCard ? `修改卡片 - ${currentEditingCard.name}` : `在「${foldersData.find(f => f.folderKey === currentManagingFolderKey)?.displayName || ''}」中添加卡片`}
-                visible={isCardModalVisible}
-                onOk={handleCardOk}
-                onCancel={() => setIsCardModalVisible(false)}
-                destroyOnClose
-                width={600}
-            >
-                <Form form={cardForm} layout="vertical" name="cardForm">
-                    <Form.Item
-                        name="cardId"
-                        label="卡片ID (唯一标识)"
-                        rules={[{ required: true, message: '请输入卡片ID!' }, { pattern: /^[a-zA-Z0-9-_]+$/, message: 'ID只能包含字母、数字、下划线、中划线' }]}
-                        tooltip="创建后不可修改，例如：course_intro"
-                    >
-                        <Input placeholder="例如：course_intro" disabled={!!currentEditingCard} />
-                    </Form.Item>
-                    <Form.Item
-                        name="name"
-                        label="卡片名称 (显示名称)"
-                        rules={[{ required: true, message: '请输入卡片名称!' }]}
-                    >
-                        <Input placeholder="例如：课程介绍" />
-                    </Form.Item>
-                    <Form.Item
-                        name="iconName"
-                        label="选择图标 (可选)"
-                        tooltip="点击图标进行选择，再次点击可取消选择。"
-                    >
-                        <Form.Item noStyle shouldUpdate={(prevValues, curValues) => prevValues.iconName !== curValues.iconName}>
-                            {({ getFieldValue, setFieldsValue }) => {
-                                const currentIconName = getFieldValue('iconName');
-                                return (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', maxHeight: '200px', overflowY: 'auto', border: '1px solid #d9d9d9', padding: '10px', borderRadius: '4px' }}>
-                                        {Object.entries(availableIcons).map(([name, IconComponent]) => {
-                                            const isSelected = currentIconName === name;
-                                            return (
-                                                <div
-                                                    key={name}
-                                                    onClick={() => {
-                                                        const newIconName = isSelected ? '' : name;
-                                                        setFieldsValue({ iconName: newIconName });
-                                                    }}
-                                                    style={{
-                                                        padding: '8px',
-                                                        border: isSelected ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                                                        borderRadius: '4px',
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        flexDirection: 'column',
-                                                        alignItems: 'center',
-                                                        minWidth: '60px',
-                                                        backgroundColor: isSelected ? '#e6f7ff' : '#fff'
-                                                    }}
-                                                    title={name}
-                                                >
-                                                    <IconComponent size={24} stroke={1.5} />
-                                                    <span style={{ fontSize: '10px', marginTop: '4px', color: '#888' }}>{name.replace('Icon','')}</span>
-                                                </div>
-                                            );
-                                        })}
-                                        <div
-                                             onClick={() => setFieldsValue({ iconName: '' })}
-                                             style={{
-                                                 padding: '8px',
-                                                 border: !currentIconName ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                                                 borderRadius: '4px',
-                                                 cursor: 'pointer',
-                                                 display: 'flex',
-                                                 flexDirection: 'column',
-                                                 alignItems: 'center',
-                                                 justifyContent: 'center',
-                                                 minWidth: '60px',
-                                                 height: '62px',
-                                                 backgroundColor: !currentIconName ? '#e6f7ff' : '#fff'
-                                             }}
-                                             title="无图标"
+                
+                <Modal
+                    title={currentEditingFolder ? `修改文件夹 - ${currentEditingFolder.displayName} (ID: ${currentEditingFolder.appId})` : "添加新应用文件夹"}
+                    open={isFolderModalVisible}
+                    onOk={handleFolderOk}
+                    onCancel={() => setIsFolderModalVisible(false)}
+                    destroyOnClose
+                >
+                    <Form form={folderForm} layout="vertical" name="folderForm">
+                        <Form.Item
+                            name="displayName"
+                            label="显示名称"
+                            rules={[{ required: true, message: '请输入文件夹的显示名称!' }]}
+                        >
+                            <Input placeholder="例如：教师助手" />
+                        </Form.Item>
+                        {currentEditingFolder && (
+                            <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
+                        )}
+                         {!currentEditingFolder && (
+                            <p>应用ID将在保存后自动生成。</p>
+                        )}
+
+                        {currentEditingFolder?.folderKey === 'global' && (
+                            <>
+                                <Divider orientation="left" plain>全局 Dify 配置</Divider>
+                                <Row gutter={16}>
+                                    <Col span={24}>
+                                        <Form.Item
+                                             name={['difyConfig', 'apiKey']}
+                                             label="全局 API Key"
+                                             rules={[{ required: true, message: '必须提供全局 API Key!' }]}
                                         >
-                                             <span style={{ fontSize: '12px', color: '#888' }}>无图标</span>
+                                            <Input.Password placeholder="输入全局 Dify API Key" />
+                                         </Form.Item>
+                                    </Col>
+                                    <Col span={24}>
+                                        <Form.Item
+                                             name={['difyConfig', 'apiUrl']}
+                                             label="全局 API URL"
+                                             rules={[{ required: true, message: '必须提供全局 API URL!' }]}
+                                        >
+                                            <Input placeholder="全局 Dify API 地址" />
+                                        </Form.Item>
+                                    </Col>
+                                 </Row>
+                            </>
+                        )}
+                    </Form>
+                </Modal>
+                
+                <Modal
+                    title={currentEditingCard ? `修改卡片 - ${currentEditingCard.name}` : `在「${foldersData.find(f => f.folderKey === currentManagingFolderKey)?.displayName || ''}」中添加卡片`}
+                    open={isCardModalVisible}
+                    onOk={handleCardOk}
+                    onCancel={() => setIsCardModalVisible(false)}
+                    confirmLoading={cardModalLoading}
+                    destroyOnClose
+                    width={700}
+                >
+                    <Form form={cardForm} layout="vertical" name="cardForm">
+                        <Form.Item
+                            name="cardId"
+                            label="卡片ID (唯一标识)"
+                            rules={[{ required: true, message: '请输入卡片ID!' }, { pattern: /^[a-zA-Z0-9-_]+$/, message: 'ID只能包含字母、数字、下划线、中划线' }]}
+                            tooltip="创建后不可修改，例如：course_intro"
+                        >
+                            <Input placeholder="例如：course_intro" disabled={!!currentEditingCard} />
+                        </Form.Item>
+                        <Form.Item
+                            name="name"
+                            label="卡片名称 (显示名称)"
+                            rules={[{ required: true, message: '请输入卡片名称!' }]}
+                        >
+                            <Input placeholder="例如：课程介绍" />
+                        </Form.Item>
+                        <Form.Item
+                            name="iconName"
+                            label="选择图标 (可选)"
+                            tooltip="点击图标进行选择，再次点击可取消选择。"
+                        >
+                            <Form.Item noStyle shouldUpdate={(prevValues, curValues) => prevValues.iconName !== curValues.iconName}>
+                                {({ getFieldValue, setFieldsValue }) => {
+                                    const currentIconName = getFieldValue('iconName');
+                                    return (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', maxHeight: '200px', overflowY: 'auto', border: '1px solid #d9d9d9', padding: '10px', borderRadius: '4px' }}>
+                                            {Object.entries(availableIcons).map(([name, IconComponent]) => {
+                                                const isSelected = currentIconName === name;
+                                                return (
+                                                    <div
+                                                        key={name}
+                                                        onClick={() => {
+                                                            const newIconName = isSelected ? '' : name;
+                                                            setFieldsValue({ iconName: newIconName });
+                                                        }}
+                                                        style={{
+                                                            padding: '8px',
+                                                            border: isSelected ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                                                            borderRadius: '4px',
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'center',
+                                                            minWidth: '60px',
+                                                            backgroundColor: isSelected ? '#e6f7ff' : '#fff'
+                                                        }}
+                                                        title={name}
+                                                    >
+                                                        <IconComponent size={24} stroke={1.5} />
+                                                        <span style={{ fontSize: '10px', marginTop: '4px', color: '#888' }}>{name.replace('Icon','')}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                            <div
+                                                 onClick={() => setFieldsValue({ iconName: '' })}
+                                                 style={{
+                                                     padding: '8px',
+                                                     border: !currentIconName ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                                                     borderRadius: '4px',
+                                                     cursor: 'pointer',
+                                                     display: 'flex',
+                                                     flexDirection: 'column',
+                                                     alignItems: 'center',
+                                                     justifyContent: 'center',
+                                                     minWidth: '60px',
+                                                     height: '62px',
+                                                     backgroundColor: !currentIconName ? '#e6f7ff' : '#fff'
+                                                 }}
+                                                 title="无图标"
+                                            >
+                                                 <span style={{ fontSize: '12px', color: '#888' }}>无图标</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            }}
-                        </Form.Item>
-                    </Form.Item>
-                    <Form.Item
-                        label="Dify API 配置"
-                        required
-                        tooltip="用于调用此卡片对应的 Dify 应用"
-                        style={{ marginBottom: 0 }}
-                    >
-                        <Form.Item
-                             name={['difyConfig', 'apiKey']}
-                             label="API Key"
-                             rules={[{ required: true, message: '必须提供 Dify API Key!' }]}
-                             style={{ display: 'inline-block', width: 'calc(50% - 8px)', marginRight: '16px' }}
-                        >
-                            <Input.Password placeholder="输入 Dify API Key" />
+                                    );
+                                }}
+                            </Form.Item>
                         </Form.Item>
                         <Form.Item
-                             name={['difyConfig', 'apiUrl']}
-                             label="API URL"
-                             rules={[{ required: true, message: '必须提供 API URL!' }]}
-                             initialValue={'https://api.dify.ai/v1'}
-                             style={{ display: 'inline-block', width: 'calc(50% - 8px)' }}
+                            label="Dify API 配置"
+                            required
+                            tooltip="用于调用此卡片对应的 Dify 应用"
+                            style={{ marginBottom: 0 }}
                         >
-                            <Input placeholder="Dify API 地址" />
-                        </Form.Item>
-                     </Form.Item>
-                </Form>
-            </Modal>
-        </>
+                            <Form.Item
+                                 name={['difyConfig', 'apiKey']}
+                                 label="API Key"
+                                 rules={[{ required: true, message: '必须提供 Dify API Key!' }]}
+                                 style={{ display: 'inline-block', width: 'calc(50% - 8px)', marginRight: '16px' }}
+                            >
+                                <Input.Password placeholder="输入 Dify API Key" />
+                            </Form.Item>
+                            <Form.Item
+                                 name={['difyConfig', 'apiUrl']}
+                                 label="API URL"
+                                 rules={[{ required: true, message: '必须提供 API URL!' }]}
+                                 initialValue={'https://api.dify.ai/v1'}
+                                 style={{ display: 'inline-block', width: 'calc(50% - 8px)' }}
+                            >
+                                <Input placeholder="Dify API 地址" />
+                            </Form.Item>
+                         </Form.Item>
+                    </Form>
+                </Modal>
+            </Spin>
+        </Card>
     );
 };
 

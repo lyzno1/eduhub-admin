@@ -1540,12 +1540,17 @@ app.post('/deleteCard', (req, res) => {
     });
 });
 
-// 新增：更新文件夹显示名称接口
+// 修改：更新文件夹接口，增加处理 difyConfig (仅针对 global)
 app.post('/updateFolder', (req, res) => {
-    const { originalKey, displayName } = req.body; // 前端发送原始 key 和新显示名称
+    // -------- 同时接收 displayName 和可选的 difyConfig --------
+    const { originalKey, displayName, difyConfig } = req.body;
 
     if (!originalKey || !displayName || displayName.trim() === "") {
         return res.status(400).send('Original key and display name are required.');
+    }
+    // -------- 对 global 的 difyConfig 做额外校验 --------
+    if (originalKey === 'global' && (!difyConfig || !difyConfig.apiKey || !difyConfig.apiUrl)) {
+        return res.status(400).send('Global folder requires difyConfig with apiKey and apiUrl for update.');
     }
 
     fs.readFile(dify_keys, 'utf8', (err, data) => {
@@ -1562,16 +1567,28 @@ app.post('/updateFolder', (req, res) => {
                 return res.status(404).send('Folder not found');
             }
 
-            // 2. 更新 displayName (确保只更新 displayName)
+            // 2. 更新 displayName (对所有文件夹都更新)
             jsonData[originalKey].displayName = displayName.trim();
 
-            // 3. 写回文件
+            // -------- 3. 如果是 global 且传入了 difyConfig，则更新 --------
+            if (originalKey === 'global' && difyConfig) {
+                // 确保 global 对象上存在 difyConfig 属性
+                if (!jsonData[originalKey].difyConfig) {
+                    jsonData[originalKey].difyConfig = {};
+                }
+                jsonData[originalKey].difyConfig.apiKey = difyConfig.apiKey;
+                jsonData[originalKey].difyConfig.apiUrl = difyConfig.apiUrl;
+                console.log(`Global config updated for key: ${originalKey}`);
+            }
+
+            // 4. 写回文件
             fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
                 if (err) { 
                     console.error("Error writing dify_keys.json after updateFolder:", err);
                     return res.status(500).send('Error writing data file'); 
                 }
-                res.json({ message: 'Folder display name updated successfully', data: jsonData[originalKey] });
+                // -------- 返回更新后的文件夹数据 --------
+                res.json({ message: 'Folder updated successfully', data: jsonData[originalKey] });
             });
         } catch (parseError) {
             console.error("Error processing dify_keys.json for updateFolder:", parseError);
