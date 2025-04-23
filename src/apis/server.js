@@ -1542,16 +1542,18 @@ app.post('/deleteCard', (req, res) => {
 
 // 修改：更新文件夹接口，增加处理 difyConfig (仅针对 global)
 app.post('/updateFolder', (req, res) => {
-    // -------- 同时接收 displayName 和可选的 difyConfig --------
-    const { originalKey, displayName, difyConfig } = req.body;
+    // -------- 接收 displayName 和可能的 apiUrl 或 difyConfig --------
+    const { originalKey, displayName, apiUrl, difyConfig } = req.body;
 
     if (!originalKey || !displayName || displayName.trim() === "") {
         return res.status(400).send('Original key and display name are required.');
     }
-    // -------- 对 global 的 difyConfig 做额外校验 --------
-    if (originalKey === 'global' && (!difyConfig || !difyConfig.apiKey || !difyConfig.apiUrl)) {
-        return res.status(400).send('Global folder requires difyConfig with apiKey and apiUrl for update.');
-    }
+    // -------- 对 global 的 difyConfig 做额外校验 (保持不变) --------
+    // 注意：这个校验现在可能不完全适用，因为我们可能只更新 displayName 和 apiUrl
+    // 但保留它可以防止意外传入不完整的 difyConfig
+    // if (originalKey === 'global' && difyConfig && (!difyConfig.apiKey || !difyConfig.apiUrl)) {
+    //     return res.status(400).send('Global folder requires difyConfig with apiKey and apiUrl for update.');
+    // }
 
     fs.readFile(dify_keys, 'utf8', (err, data) => {
         if (err) { 
@@ -1570,16 +1572,17 @@ app.post('/updateFolder', (req, res) => {
             // 2. 更新 displayName (对所有文件夹都更新)
             jsonData[originalKey].displayName = displayName.trim();
 
-            // -------- 3. 如果是 global 且传入了 difyConfig，则更新 --------
-            if (originalKey === 'global' && difyConfig) {
-                // 确保 global 对象上存在 difyConfig 属性
-                if (!jsonData[originalKey].difyConfig) {
-                    jsonData[originalKey].difyConfig = {};
+            // -------- 3. 特殊处理 global key --------
+            if (originalKey === 'global') {
+                // 更新顶级的 apiUrl (如果请求中提供了)
+                if (apiUrl !== undefined) { // 检查 apiUrl 是否在请求中
+                   jsonData[originalKey].apiUrl = apiUrl;
+                   console.log(`Global apiUrl updated for key: ${originalKey} to: ${apiUrl}`);
                 }
-                jsonData[originalKey].difyConfig.apiKey = difyConfig.apiKey;
-                jsonData[originalKey].difyConfig.apiUrl = difyConfig.apiUrl;
-                console.log(`Global config updated for key: ${originalKey}`);
+                // (可选) 如果仍然需要通过 difyConfig 更新 global 的某些属性，可以在这里添加逻辑
+                // else if (difyConfig) { ... }
             }
+            // -------- global 处理结束 --------
 
             // 4. 写回文件
             fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
@@ -1587,11 +1590,246 @@ app.post('/updateFolder', (req, res) => {
                     console.error("Error writing dify_keys.json after updateFolder:", err);
                     return res.status(500).send('Error writing data file'); 
                 }
-                // -------- 返回更新后的文件夹数据 --------
-                res.json({ message: 'Folder updated successfully', data: jsonData[originalKey] });
+                // -------- 返回成功信息和更新后的数据 --------
+                // 注意：这里返回的是 jsonData[originalKey]，包含了整个文件夹对象
+                // 前端在 handleSaveGeneralSettings 中判断 success 时需要注意后端是否真的返回了这个字段
+                // 为了更健壮，直接返回成功消息
+                res.json({ success: true, message: 'Folder updated successfully', data: jsonData[originalKey] });
             });
         } catch (parseError) {
             console.error("Error processing dify_keys.json for updateFolder:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// ######## 全局模型管理接口 ########
+
+// 添加全局模型
+app.post('/addGlobalModel', (req, res) => {
+    const { name, apiKey, isDefault } = req.body;
+
+    if (!name || !apiKey) {
+        return res.status(400).send('Model name and API Key are required.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+            if (!jsonData.global || !Array.isArray(jsonData.global.models)) {
+                jsonData.global = { ...(jsonData.global || {}), models: [] }; // 初始化 models 数组
+            }
+
+            // 检查模型名称是否已存在
+            const nameExists = jsonData.global.models.some(model => model.name === name);
+            if (nameExists) {
+                return res.status(409).send('Model with this name already exists.');
+            }
+
+            const newModel = {
+                name: name,
+                apiKey: apiKey,
+                isDefault: !!isDefault // 确保是布尔值
+            };
+
+            // 如果新模型要设为默认，取消其他模型的默认状态
+            if (newModel.isDefault) {
+                jsonData.global.models.forEach(model => model.isDefault = false);
+            }
+
+            jsonData.global.models.push(newModel);
+
+            // 如果添加后没有默认模型了（比如是第一个模型，或者添加时没设为默认），自动将第一个设为默认
+            const hasDefault = jsonData.global.models.some(model => model.isDefault);
+            if (!hasDefault && jsonData.global.models.length > 0) {
+                jsonData.global.models[0].isDefault = true;
+            }
+
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.status(201).json({ success: true, message: 'Model added successfully', data: newModel });
+            });
+        } catch (parseError) {
+            console.error("Error processing addGlobalModel:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 更新全局模型 (支持名称修改)
+app.post('/updateGlobalModel', (req, res) => {
+    const { originalName, newData } = req.body; // 接收 originalName 和 newData
+
+    // 校验 newData 内容
+    if (!originalName || !newData || !newData.name || !newData.apiKey) {
+        return res.status(400).send('Original name, new name, and new API Key are required for update.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+            if (!jsonData.global || !Array.isArray(jsonData.global.models)) {
+                return res.status(404).send('Global models data not found.');
+            }
+
+            // 1. 使用 originalName 查找模型索引
+            const modelIndex = jsonData.global.models.findIndex(model => model.name === originalName);
+            if (modelIndex === -1) {
+                return res.status(404).send('Model with original name not found.');
+            }
+
+            // 2. 检查新名称是否与**其他**模型冲突
+            if (originalName !== newData.name) { // 只有在名称改变时才检查冲突
+                const newNameExists = jsonData.global.models.some((model, index) => index !== modelIndex && model.name === newData.name);
+                if (newNameExists) {
+                    return res.status(409).send('Another model with the new name already exists.');
+                }
+            }
+
+            // 3. 准备更新后的模型数据
+            const updatedModel = {
+                // ...jsonData.global.models[modelIndex], // 不再需要展开旧数据，直接用新的
+                name: newData.name,       // 使用新名称
+                apiKey: newData.apiKey,   // 使用新 apiKey
+                isDefault: !!newData.isDefault // 确保是布尔值
+            };
+
+            // 4. 处理 isDefault 逻辑
+            if (updatedModel.isDefault) {
+                // 如果将此模型设为默认，取消其他模型的默认状态
+                jsonData.global.models.forEach((model, index) => {
+                    if (index !== modelIndex) {
+                        model.isDefault = false;
+                    }
+                });
+            } else {
+                // 如果取消默认，并且它是当前唯一的默认模型，则需要指定一个新的默认（例如第一个）
+                const currentDefault = jsonData.global.models.find((model, index) => index !== modelIndex && model.isDefault);
+                // 如果找不到其他的默认模型（说明原模型是唯一默认），并且列表不止一个模型
+                if (!currentDefault && jsonData.global.models[modelIndex].isDefault && jsonData.global.models.length > 1) {
+                     // 注意：这里不能直接修改 updatedModel.isDefault = true
+                     // 应该在更新数组前先找到新的默认模型
+                     // 将第一个非当前编辑的模型设为默认
+                     const newDefaultIndex = jsonData.global.models.findIndex((_, index) => index !== modelIndex);
+                     if (newDefaultIndex !== -1) {
+                         jsonData.global.models[newDefaultIndex].isDefault = true;
+                     }
+                } else if (jsonData.global.models.length === 1) {
+                    // 如果只有一个模型，取消默认时强制其为默认
+                    updatedModel.isDefault = true;
+                }
+            }
+            
+            // 5. 更新数组中的模型
+            jsonData.global.models[modelIndex] = updatedModel;
+
+            // 6. 再次确保至少有一个默认模型 (以防万一)
+             const hasDefault = jsonData.global.models.some(model => model.isDefault);
+             if (!hasDefault && jsonData.global.models.length > 0) {
+                 // 如果没有默认了，将第一个设为默认
+                 jsonData.global.models[0].isDefault = true;
+             }
+
+            // 7. 写回文件
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.json({ success: true, message: 'Model updated successfully', data: updatedModel });
+            });
+        } catch (parseError) {
+            console.error("Error processing updateGlobalModel:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 删除全局模型
+app.post('/deleteGlobalModel', (req, res) => {
+    const { name } = req.body; // 按名称删除
+
+    if (!name) {
+        return res.status(400).send('Model name is required for deletion.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+            if (!jsonData.global || !Array.isArray(jsonData.global.models)) {
+                return res.status(404).send('Global models data not found.');
+            }
+
+            const modelIndex = jsonData.global.models.findIndex(model => model.name === name);
+            if (modelIndex === -1) {
+                return res.status(404).send('Model not found.');
+            }
+
+            // 检查是否为默认模型
+            if (jsonData.global.models[modelIndex].isDefault) {
+                return res.status(400).send('Cannot delete the default model.');
+            }
+
+            // 删除模型
+            jsonData.global.models.splice(modelIndex, 1);
+
+            // 确保删除后仍有默认模型（如果列表不为空）
+            const hasDefault = jsonData.global.models.some(model => model.isDefault);
+            if (!hasDefault && jsonData.global.models.length > 0) {
+                jsonData.global.models[0].isDefault = true;
+            }
+
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.json({ success: true, message: 'Model deleted successfully' });
+            });
+        } catch (parseError) {
+            console.error("Error processing deleteGlobalModel:", parseError);
+            res.status(500).send('Error processing data file');
+        }
+    });
+});
+
+// 设置默认全局模型
+app.post('/setGlobalDefaultModel', (req, res) => {
+    const { name } = req.body; // 按名称设置默认
+
+    if (!name) {
+        return res.status(400).send('Model name is required to set as default.');
+    }
+
+    fs.readFile(dify_keys, 'utf8', (err, data) => {
+        if (err) { return res.status(500).send('Error reading data file'); }
+
+        try {
+            const jsonData = JSON.parse(data);
+            if (!jsonData.global || !Array.isArray(jsonData.global.models)) {
+                return res.status(404).send('Global models data not found.');
+            }
+
+            let modelFound = false;
+            jsonData.global.models.forEach(model => {
+                if (model.name === name) {
+                    model.isDefault = true;
+                    modelFound = true;
+                } else {
+                    model.isDefault = false;
+                }
+            });
+
+            if (!modelFound) {
+                return res.status(404).send('Model not found.');
+            }
+
+            fs.writeFile(dify_keys, JSON.stringify(jsonData, null, 2), 'utf8', (err) => {
+                if (err) { return res.status(500).send('Error writing data file'); }
+                res.json({ success: true, message: `Model '${name}' set as default successfully` });
+            });
+        } catch (parseError) {
+            console.error("Error processing setGlobalDefaultModel:", parseError);
             res.status(500).send('Error processing data file');
         }
     });

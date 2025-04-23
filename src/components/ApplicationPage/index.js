@@ -178,8 +178,16 @@ const ApplicationPage = () => {
         fetch(`${API_URL}/getDify_keys`)
             .then(response => response.json())
             .then(data => {
-                const formattedData = Object.keys(data).map(folderKey => {
-                    const folder = data[folderKey];
+                // 过滤掉 global 配置项
+                const applicationData = Object.keys(data)
+                    .filter(folderKey => folderKey !== 'global') // 添加过滤条件
+                    .reduce((acc, folderKey) => {
+                        acc[folderKey] = data[folderKey];
+                        return acc;
+                    }, {});
+
+                const formattedData = Object.keys(applicationData).map(folderKey => {
+                    const folder = applicationData[folderKey];
                     const cards = Array.isArray(folder.cards) ? folder.cards.map(card => ({ ...card, key: card.cardId })) : [];
                     return {
                         key: folderKey,
@@ -214,25 +222,24 @@ const ApplicationPage = () => {
 
     // 文件夹管理
     const handleAddFolder = () => {
+        // 清除可能残留的全局编辑状态（虽然理论上不应出现）
         setCurrentEditingFolder(null);
         setIsFolderModalVisible(true);
         folderForm.resetFields();
+        // 移除设置全局特定字段的逻辑
     };
 
     const handleEditFolder = (folderRecord) => {
+        // 全局配置已移除，不再需要特殊处理 global
         setCurrentEditingFolder(folderRecord);
         setIsFolderModalVisible(true);
         console.log('Editing folder record:', JSON.stringify(folderRecord, null, 2));
 
         const fieldsToSet = {
             displayName: folderRecord.displayName,
+            // 不再需要设置 difyConfig
         };
-        if (folderRecord.folderKey === 'global' && folderRecord.difyConfig) {
-            fieldsToSet.difyConfig = {
-                apiKey: folderRecord.difyConfig.apiKey,
-                apiUrl: folderRecord.difyConfig.apiUrl
-            };
-        }
+
         console.log('Fields object for setFieldsValue:', JSON.stringify(fieldsToSet, null, 2));
         folderForm.setFieldsValue(fieldsToSet);
     };
@@ -273,17 +280,11 @@ const ApplicationPage = () => {
 
                 let requestBody;
                 if (currentEditingFolder) {
+                    // 移除处理 global 和 difyConfig 的逻辑
                     requestBody = {
                         originalKey: currentEditingFolder.folderKey,
                         displayName: values.displayName,
                     };
-                    if (currentEditingFolder.folderKey === 'global') {
-                        const difyConfigValues = values.difyConfig || {};
-                        requestBody.difyConfig = {
-                            apiKey: difyConfigValues.apiKey || '',
-                            apiUrl: difyConfigValues.apiUrl || ''
-                        };
-                    }
                 } else {
                     requestBody = {
                         displayName: values.displayName
@@ -522,36 +523,10 @@ const ApplicationPage = () => {
                             <Input placeholder="例如：教师助手" />
                         </Form.Item>
                         {currentEditingFolder && (
-                            <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
+                             <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
                         )}
                          {!currentEditingFolder && (
                             <p>应用ID将在保存后自动生成。</p>
-                        )}
-
-                        {currentEditingFolder?.folderKey === 'global' && (
-                            <>
-                                <Divider orientation="left" plain>全局 Dify 配置</Divider>
-                                <Row gutter={16}>
-                                    <Col span={24}>
-                                        <Form.Item
-                                             name={['difyConfig', 'apiKey']}
-                                             label="全局 API Key"
-                                             rules={[{ required: true, message: '必须提供全局 API Key!' }]}
-                                        >
-                                            <Input.Password placeholder="输入全局 Dify API Key" />
-                                         </Form.Item>
-                                    </Col>
-                                    <Col span={24}>
-                                        <Form.Item
-                                             name={['difyConfig', 'apiUrl']}
-                                             label="全局 API URL"
-                                             rules={[{ required: true, message: '必须提供全局 API URL!' }]}
-                                        >
-                                            <Input placeholder="全局 Dify API 地址" />
-                                        </Form.Item>
-                                    </Col>
-                                 </Row>
-                            </>
                         )}
                     </Form>
                 </Modal>

@@ -9,7 +9,8 @@ import {
     UserOutlined,
     QuestionOutlined,
     LogoutOutlined,
-    SyncOutlined
+    SyncOutlined,
+    GlobalOutlined
 } from '@ant-design/icons';
 import ApplicationPage  from "../../components/ApplicationPage";
 import IndexPage   from "../../components/IndexPage";
@@ -21,6 +22,7 @@ import {useNavigate} from "react-router-dom";
 import SettingPage  from "../../components/SettingPage";
 import UserManagePage from "../../components/UserManagePage";
 import RebuildAndRestartButton from '../../components/RebuildAndRestartButton';
+import GlobalSettingsPage from '../../components/GlobalSettingsPage';
 
 const { Header, Content, Sider } = Layout;
 
@@ -93,6 +95,7 @@ const AdminPage = () => {
                         onSelect={({ key }) => setSelectedMenu(key)}
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>应用管理</Menu.Item>
+                        <Menu.Item key="9" icon={<GlobalOutlined />}>普通聊天设置</Menu.Item>
                         <Menu.Item key="2" icon={<DatabaseOutlined />}>学生目录管理</Menu.Item>
                         <Menu.Item key="3" icon={<DatabaseOutlined />}>老师目录管理</Menu.Item>
                         <Menu.Item key="4" icon={<BulbOutlined />}>提示词管理</Menu.Item>
@@ -117,6 +120,7 @@ const AdminPage = () => {
                         {/*选择一个栏目以开始管理*/}
                         {/*//TODO 不同的栏目用不同的内容*/}
                         {selectedMenu === '1' && <ApplicationPage />}
+                        {selectedMenu === '9' && <GlobalSettingsPage />}
                         {selectedMenu === '2' && <IndexPage />}
                         {selectedMenu === '3' && <IndexTeacherPage />}
                         {selectedMenu === '4' && <PromptsPage />}
