@@ -238,7 +238,7 @@ const ApplicationPage = () => {
         const fieldsToSet = {
             displayName: folderRecord.displayName,
             // 不再需要设置 difyConfig
-        };
+            };
 
         console.log('Fields object for setFieldsValue:', JSON.stringify(fieldsToSet, null, 2));
         folderForm.setFieldsValue(fieldsToSet);
@@ -523,7 +523,7 @@ const ApplicationPage = () => {
                             <Input placeholder="例如：教师助手" />
                         </Form.Item>
                         {currentEditingFolder && (
-                             <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
+                            <p>文件夹键名: {currentEditingFolder.folderKey} (不可修改)</p>
                         )}
                          {!currentEditingFolder && (
                             <p>应用ID将在保存后自动生成。</p>

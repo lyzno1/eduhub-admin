@@ -17,6 +17,7 @@ const configPath = '../../../eduhub/config.json';
 const whitelistPath = '../../../eduhub/whitelist.json';
 const blacklistPath = '../../../eduhub/blacklist.json';
 const openAiTsFile = '../../../eduhub/types/openai.ts';
+const aboutJsonPath = '../../../eduhub/public/config/about.json';
 
 const bcrypt = require('bcryptjs');
 const { exec } = require('child_process');
@@ -1578,7 +1579,7 @@ app.post('/updateFolder', (req, res) => {
                 if (apiUrl !== undefined) { // 检查 apiUrl 是否在请求中
                    jsonData[originalKey].apiUrl = apiUrl;
                    console.log(`Global apiUrl updated for key: ${originalKey} to: ${apiUrl}`);
-                }
+            }
                 // (可选) 如果仍然需要通过 difyConfig 更新 global 的某些属性，可以在这里添加逻辑
                 // else if (difyConfig) { ... }
             }
@@ -1832,5 +1833,59 @@ app.post('/setGlobalDefaultModel', (req, res) => {
             console.error("Error processing setGlobalDefaultModel:", parseError);
             res.status(500).send('Error processing data file');
         }
+    });
+});
+
+// 获取 about.json 内容接口
+app.get('/getAboutInfo', (req, res) => {
+    fs.readFile(aboutJsonPath, 'utf8', (err, data) => {
+        if (err) {
+            // 如果文件不存在，可以返回一个默认结构或错误
+            if (err.code === 'ENOENT') {
+                console.warn(`about.json not found at ${aboutJsonPath}, returning default structure.`);
+                // 返回一个空的或默认的结构，以便前端可以填充
+                res.json({
+                    tooltipContent: '',
+                    version: '',
+                    copyright: '',
+                    additionalInfo: {
+                        developer: '',
+                        website: ''
+                    }
+                });
+            } else {
+                console.error(`读取 about.json 失败: ${err}`);
+                res.status(500).send('读取关于信息文件失败');
+            }
+            return;
+        }
+        try {
+            const jsonData = JSON.parse(data);
+            res.json(jsonData);
+        } catch (parseError) {
+            console.error(`解析 about.json 失败: ${parseError}`);
+            res.status(500).send('解析关于信息文件失败');
+        }
+    });
+});
+
+// 更新 about.json 内容接口
+app.post('/updateAboutInfo', (req, res) => {
+    const newAboutData = req.body; // 获取前端发送的完整 about.json 数据结构
+
+    // 基本验证 (可以根据需要添加更严格的验证)
+    if (!newAboutData || typeof newAboutData.tooltipContent !== 'string' || typeof newAboutData.version !== 'string' || typeof newAboutData.copyright !== 'string' || typeof newAboutData.additionalInfo !== 'object') {
+        return res.status(400).send('提供的关于信息数据格式无效');
+    }
+
+    // 将新数据写入文件 (覆盖写入)
+    fs.writeFile(aboutJsonPath, JSON.stringify(newAboutData, null, 2), 'utf8', (err) => {
+        if (err) {
+            console.error(`写入 about.json 失败: ${err}`);
+            res.status(500).send('更新关于信息文件失败');
+            return;
+        }
+        console.log('about.json 更新成功');
+        res.json({ success: true, message: '关于信息更新成功', data: newAboutData });
     });
 });
