@@ -1,85 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, Button, message, Spin, Divider, InputNumber, Select } from 'antd';
-import { API_URL } from '../../config/config'; // 确保 API_URL 正确配置
+import { Card, Form, Input, Button, message, Spin, Divider } from 'antd';
+import { API_URL } from '../../config/config';
 const { TextArea } = Input;
 
 const SettingPage = () => {
     const [loading, setLoading] = useState(true);
-    // const [configData, setConfigData] = useState({}); // 注释掉通用配置状态
-    // const [form] = Form.useForm(); // 注释掉通用配置表单实例
-    // 新增：关于信息状态
-    const [aboutInfo, setAboutInfo] = useState({ 
-        tooltipContent: '', 
-        version: '', 
-        copyright: '', 
-        additionalInfo: { developer: '', website: '' } 
+    // 更新状态以匹配 metadata.json
+    const [metadata, setMetadata] = useState({
+        title: '',
+        subtitle: '',
+        tooltipContent: '',
+        version: '',
+        copyright: '',
+        additionalInfo: { developer: '', website: '' }
     });
-    const [aboutForm] = Form.useForm(); // 为关于信息创建新的表单实例
+    const [metadataForm] = Form.useForm(); // 重命名表单实例
 
-    // 获取通用配置数据 - 注释掉
-    // useEffect(() => {
-    //     fetch(`${API_URL}/getConfigData`)
-    //         .then(response => response.json())
-    //         .then(data => {
-    //             setConfigData(data);
-    //             form.setFieldsValue(data);
-    //         })
-    //         .catch(error => console.error('获取配置数据失败:', error))
-    //         .finally(() => setLoading(false));
-    // }, [form]);
-
-    // 新增：获取关于信息数据
+    // 获取元数据
     useEffect(() => {
-        setLoading(true); // 在这里开始 loading
-        fetch(`${API_URL}/getAboutInfo`)
+        setLoading(true);
+        fetch(`${API_URL}/getMetadata`) // 更新 API 端点
             .then(response => response.json())
             .then(data => {
-                // 确保 additionalInfo 存在且为对象
-                if (data && typeof data.additionalInfo !== 'object') {
-                    data.additionalInfo = { developer: '', website: '' };
-                }
-                setAboutInfo(data);
-                // 使用 setFieldsValue 设置关于信息表单的初始值
-                aboutForm.setFieldsValue({
-                    ...data,
-                    developer: data.additionalInfo?.developer,
-                    website: data.additionalInfo?.website,
+                // 确保 additionalInfo 存在且为对象，并提供默认值
+                const saneData = {
+                    title: data?.title || '',
+                    subtitle: data?.subtitle || '',
+                    tooltipContent: data?.tooltipContent || '',
+                    version: data?.version || '',
+                    copyright: data?.copyright || '',
+                    additionalInfo: {
+                        developer: data?.additionalInfo?.developer || '',
+                        website: data?.additionalInfo?.website || ''
+                    }
+                };
+                setMetadata(saneData);
+                // 使用 setFieldsValue 设置表单的初始值，包含新增字段
+                metadataForm.setFieldsValue({
+                    ...saneData,
+                    developer: saneData.additionalInfo.developer,
+                    website: saneData.additionalInfo.website,
                 });
             })
             .catch(error => {
-                 console.error('获取关于信息失败:', error);
-                 message.error('加载关于信息失败');
+                 console.error('获取元数据失败:', error);
+                 message.error('加载元数据失败');
              })
-            .finally(() => setLoading(false)); // 在这里结束 loading
-    }, [aboutForm]);
+            .finally(() => setLoading(false));
+    }, [metadataForm]); // 依赖项更新为 metadataForm
 
-    // 保存通用配置数据 - 注释掉
-    // const handleSaveConfig = (values) => {
-    //     setLoading(true);
-    //     fetch(`${API_URL}/saveConfigData`, {
-    //         method: 'POST',
-    //         headers: {
-    //             'Content-Type': 'application/json',
-    //         },
-    //         body: JSON.stringify(values),
-    //     })
-    //     .then(response => response.json())
-    //     .then(data => {
-    //         message.success('配置保存成功');
-    //         setConfigData(data);
-    //     })
-    //     .catch(error => {
-    //         console.error('保存配置失败:', error);
-    //         message.error('保存配置失败');
-    //     })
-    //     .finally(() => setLoading(false));
-    // };
-    
-    // 新增：保存关于信息数据
-    const handleSaveAboutInfo = (values) => {
+    // 保存元数据
+    const handleSaveMetadata = (values) => { // 重命名函数
         setLoading(true);
-        // 构造符合 about.json 格式的对象
-        const aboutDataToSave = {
+        // 构造符合 metadata.json 格式的对象
+        const metadataToSave = {
+            title: values.title,
+            subtitle: values.subtitle,
             tooltipContent: values.tooltipContent,
             version: values.version,
             copyright: values.copyright,
@@ -88,113 +64,92 @@ const SettingPage = () => {
                 website: values.website,
             }
         };
-        
-        fetch(`${API_URL}/updateAboutInfo`, {
+
+        fetch(`${API_URL}/updateMetadata`, { // 更新 API 端点
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(aboutDataToSave),
+            body: JSON.stringify(metadataToSave),
         })
         .then(response => response.json())
         .then(data => {
             if(data.success) {
-                message.success(data.message || '关于信息保存成功');
-                // 更新状态以反映保存后的数据（如果后端返回了更新后的数据）
-                // 假设后端返回的 data.data 是更新后的完整 aboutInfo 对象
+                message.success(data.message || '元数据保存成功');
+                // 更新状态和表单
                 if (data.data) {
-                     // 确保 additionalInfo 结构正确
-                     if (data.data && typeof data.data.additionalInfo !== 'object') {
-                        data.data.additionalInfo = { developer: '', website: '' };
-                     }
-                     setAboutInfo(data.data);
-                     // 同时更新表单显示的值
-                     aboutForm.setFieldsValue({
-                        ...data.data,
-                        developer: data.data.additionalInfo?.developer,
-                        website: data.data.additionalInfo?.website,
+                     const updatedData = {
+                        title: data.data?.title || '',
+                        subtitle: data.data?.subtitle || '',
+                        tooltipContent: data.data?.tooltipContent || '',
+                        version: data.data?.version || '',
+                        copyright: data.data?.copyright || '',
+                        additionalInfo: {
+                            developer: data.data?.additionalInfo?.developer || '',
+                            website: data.data?.additionalInfo?.website || ''
+                        }
+                    };
+                     setMetadata(updatedData);
+                     metadataForm.setFieldsValue({
+                        ...updatedData,
+                        developer: updatedData.additionalInfo.developer,
+                        website: updatedData.additionalInfo.website,
                      });
                 }
-                } else {
-                message.error(data.message || '保存关于信息失败');
-                }
-            })
-            .catch(error => {
-            console.error('保存关于信息失败:', error);
-            message.error('保存关于信息失败，请查看控制台日志');
+            } else {
+                message.error(data.message || '保存元数据失败');
+            }
+        })
+        .catch(error => {
+            console.error('保存元数据失败:', error);
+            message.error('保存元数据失败，请查看控制台日志');
         })
         .finally(() => setLoading(false));
     };
 
     return (
         <Spin spinning={loading}>
-            {/* 系统通用设置 Card - 已注释
-            <Card title="系统通用设置">
+            <Card title="应用元数据配置"> {/* 更新卡片标题 */}
                 <Form
-                    form={form}
+                    form={metadataForm} // 使用更新后的表单实例
                     layout="vertical"
-                    onFinish={handleSaveConfig}
-                    initialValues={configData} // 确保表单初始值设置正确
-                >
-                    <Form.Item name="DIFY_API_URL" label="Dify API URL" rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="DIFY_TIMEOUT" label="Dify 请求超时 (ms)" rules={[{ required: true, type: 'number' }]}>
-                        <InputNumber style={{ width: '100%' }} min={0} />
-                    </Form.Item>
-                    <Form.Item name="DIFY_APP_GENERIC_API_KEY" label="Dify 通用 App API Key (可选)">
-                        <Input.Password placeholder="如果配置，将作为应用的默认Key"/>
-                    </Form.Item>
-                    <Form.Item name="DIFY_APP_GENERIC_API_URL" label="Dify 通用 App API URL (可选)">
-                        <Input placeholder="如果配置，将作为应用的默认URL，覆盖通用URL"/>
-                    </Form.Item>
-                     <Form.Item name="WHITE_LIST_CHECK_INTERVAL" label="白名单检查间隔 (ms)" rules={[{ required: true, type: 'number' }]}>
-                        <InputNumber style={{ width: '100%' }} min={1000}/>
-                    </Form.Item>
-                    <Form.Item name="APP_UPDATE_INTERVAL" label="应用列表刷新间隔 (ms)" rules={[{ required: true, type: 'number' }]}>
-                        <InputNumber style={{ width: '100%' }} min={5000}/>
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit">
-                            保存通用设置
-                        </Button>
-                    </Form.Item>
-                </Form>
-            </Card>
-
-            <Divider />
-            */}
-            
-            {/* 关于信息配置卡片 - 保持显示 */}
-            <Card title="关于信息配置">
-                <Form
-                    form={aboutForm} // 使用独立的表单实例
-                    layout="vertical"
-                    onFinish={handleSaveAboutInfo}
+                    onFinish={handleSaveMetadata} // 使用更新后的保存函数
                     initialValues={{
-                        ...aboutInfo,
-                        developer: aboutInfo.additionalInfo?.developer,
-                        website: aboutInfo.additionalInfo?.website,
-                    }} // 确保在数据加载后设置初始值
+                        ...metadata,
+                        developer: metadata.additionalInfo?.developer,
+                        website: metadata.additionalInfo?.website,
+                    }} // 确保表单初始值正确
                 >
-                    <Form.Item name="tooltipContent" label="悬停提示内容 (Tooltip)" rules={[{ required: true }]}>
-                        <TextArea rows={3} placeholder="支持换行，例如：第一行\n第二行"/>
+                    {/* 第一组：基本显示信息 */}
+                    <Form.Item name="title" label="应用主标题" rules={[{ required: true }]}>
+                        <Input placeholder="例如：EduHub 智能助手"/>
+                    </Form.Item>
+                    <Form.Item name="subtitle" label="应用副标题">
+                        <Input placeholder="例如：基于大模型的知识问答与创作平台"/>
+                    </Form.Item>
+
+                    <Divider /> {/* 分隔线 */}
+
+                    {/* 第二组：关于与详细信息 */}
+                    <Form.Item name="tooltipContent" label="侧边栏悬停提示内容 (Tooltip)" rules={[{ required: true }]}>
+                        <TextArea rows={3} placeholder="用于侧边栏'关于'图标的提示，支持换行。例如：应用名称 v1.0\n开发者信息"/>
                     </Form.Item>
                     <Form.Item name="version" label="版本号" rules={[{ required: true }]}>
                         <Input placeholder="例如：v1.0.1"/>
                     </Form.Item>
                     <Form.Item name="copyright" label="版权信息" rules={[{ required: true }]}>
-                        <Input placeholder="例如：© 2024 Your Organization"/>
+                        <Input placeholder="例如：© 2024 北京信息科技大学"/>
                     </Form.Item>
                      <Form.Item name="developer" label="开发者/组织">
-                        <Input placeholder="例如：智能系统实验室"/>
+                        <Input placeholder="例如：ifLab 智能未来实验室"/>
                     </Form.Item>
                     <Form.Item name="website" label="相关网站 URL">
-                        <Input placeholder="例如：https://example.com"/>
+                        <Input placeholder="例如：https://iflab.org"/>
                     </Form.Item>
+
                     <Form.Item>
                         <Button type="primary" htmlType="submit">
-                            保存关于信息
+                            保存元数据
                         </Button>
                     </Form.Item>
                 </Form>

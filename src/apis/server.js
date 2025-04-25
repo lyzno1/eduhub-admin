@@ -22,7 +22,7 @@ const configPath = path.join(EDUHUB_BASE_PATH, 'config.json');
 const whitelistPath = path.join(EDUHUB_BASE_PATH, 'whitelist.json');
 const blacklistPath = path.join(EDUHUB_BASE_PATH, 'blacklist.json');
 const openAiTsFile = path.join(EDUHUB_BASE_PATH, 'types/openai.ts');
-const aboutJsonPath = path.join(EDUHUB_BASE_PATH, 'public/config/about.json');
+const metadataJsonPath = path.join(EDUHUB_BASE_PATH, 'public/config/metadata.json');
 
 const bcrypt = require('bcryptjs');
 const { exec } = require('child_process');
@@ -1841,15 +1841,16 @@ app.post('/setGlobalDefaultModel', (req, res) => {
     });
 });
 
-// 获取 about.json 内容接口
-app.get('/getAboutInfo', (req, res) => {
-    fs.readFile(aboutJsonPath, 'utf8', (err, data) => {
+// 获取 metadata.json 内容接口
+app.get('/getMetadata', (req, res) => { // 重命名路由
+    fs.readFile(metadataJsonPath, 'utf8', (err, data) => { // 使用新路径变量
         if (err) {
-            // 如果文件不存在，可以返回一个默认结构或错误
+            // 如果文件不存在，返回完整的默认 metadata 结构
             if (err.code === 'ENOENT') {
-                console.warn(`about.json not found at ${aboutJsonPath}, returning default structure.`);
-                // 返回一个空的或默认的结构，以便前端可以填充
+                console.warn(`metadata.json not found at ${metadataJsonPath}, returning default structure.`);
                 res.json({
+                    title: '',
+                    subtitle: '',
                     tooltipContent: '',
                     version: '',
                     copyright: '',
@@ -1859,38 +1860,48 @@ app.get('/getAboutInfo', (req, res) => {
                     }
                 });
             } else {
-                console.error(`读取 about.json 失败: ${err}`);
-                res.status(500).send('读取关于信息文件失败');
+                console.error(`读取 metadata.json 失败: ${err}`);
+                res.status(500).send('读取元数据文件失败');
             }
             return;
         }
         try {
             const jsonData = JSON.parse(data);
+            // 可以选择性地验证返回的数据结构，或者信任文件内容
             res.json(jsonData);
         } catch (parseError) {
-            console.error(`解析 about.json 失败: ${parseError}`);
-            res.status(500).send('解析关于信息文件失败');
+            console.error(`解析 metadata.json 失败: ${parseError}`);
+            res.status(500).send('解析元数据文件失败');
         }
     });
 });
 
-// 更新 about.json 内容接口
-app.post('/updateAboutInfo', (req, res) => {
-    const newAboutData = req.body; // 获取前端发送的完整 about.json 数据结构
+// 更新 metadata.json 内容接口
+app.post('/updateMetadata', (req, res) => { // 重命名路由
+    const newMetadata = req.body; // 获取前端发送的完整 metadata 数据结构
 
-    // 基本验证 (可以根据需要添加更严格的验证)
-    if (!newAboutData || typeof newAboutData.tooltipContent !== 'string' || typeof newAboutData.version !== 'string' || typeof newAboutData.copyright !== 'string' || typeof newAboutData.additionalInfo !== 'object') {
-        return res.status(400).send('提供的关于信息数据格式无效');
+    // 更新验证逻辑以匹配 metadata.json 结构
+    if (!newMetadata || 
+        typeof newMetadata.title !== 'string' || 
+        typeof newMetadata.subtitle !== 'string' || 
+        typeof newMetadata.tooltipContent !== 'string' || 
+        typeof newMetadata.version !== 'string' || 
+        typeof newMetadata.copyright !== 'string' || 
+        typeof newMetadata.additionalInfo !== 'object' ||
+        newMetadata.additionalInfo === null || // 确保 additionalInfo 不是 null
+        typeof newMetadata.additionalInfo.developer !== 'string' ||
+        typeof newMetadata.additionalInfo.website !== 'string') {
+        return res.status(400).send('提供的元数据数据格式无效或缺少字段');
     }
 
     // 将新数据写入文件 (覆盖写入)
-    fs.writeFile(aboutJsonPath, JSON.stringify(newAboutData, null, 2), 'utf8', (err) => {
+    fs.writeFile(metadataJsonPath, JSON.stringify(newMetadata, null, 2), 'utf8', (err) => { // 使用新路径变量
         if (err) {
-            console.error(`写入 about.json 失败: ${err}`);
-            res.status(500).send('更新关于信息文件失败');
+            console.error(`写入 metadata.json 失败: ${err}`);
+            res.status(500).send('更新元数据文件失败');
             return;
         }
-        console.log('about.json 更新成功');
-        res.json({ success: true, message: '关于信息更新成功', data: newAboutData });
+        console.log('metadata.json 更新成功');
+        res.json({ success: true, message: '元数据更新成功', data: newMetadata });
     });
 });
