@@ -115,11 +115,11 @@ const SettingPage = () => {
                         website: data.data.additionalInfo?.website,
                      });
                 }
-            } else {
+                } else {
                 message.error(data.message || '保存关于信息失败');
-            }
-        })
-        .catch(error => {
+                }
+            })
+            .catch(error => {
             console.error('保存关于信息失败:', error);
             message.error('保存关于信息失败，请查看控制台日志');
         })

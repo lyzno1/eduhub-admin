@@ -4,20 +4,25 @@ const bodyParser = require('body-parser');
 const fs = require('fs');
 const app = express();
 const port = process.env.REACT_APP_API_URL ? new URL(process.env.REACT_APP_API_URL).port : 3001; // 使用环境变量或默认值3001
-const path = require('path');
+const path = require('path'); // 导入 path 模块
 const { v4: uuidv4 } = require('uuid');
-const filePath = '../../../eduhub/account.json';
-const dify_keys = '../../../eduhub/dify_keys.json';
-const studentChatPath = '../../../eduhub/studentChat.json';
-const teacherChatPath = '../../../eduhub/teacherChat.json';
-const promptPath = '../../../eduhub/prompt.json';
-const helpPath = '../../../eduhub/help.json';
-const lookPath = '../../../eduhub/looks.json';
-const configPath = '../../../eduhub/config.json';
-const whitelistPath = '../../../eduhub/whitelist.json';
-const blacklistPath = '../../../eduhub/blacklist.json';
-const openAiTsFile = '../../../eduhub/types/openai.ts';
-const aboutJsonPath = '../../../eduhub/public/config/about.json';
+
+// 定义公共基础路径
+const EDUHUB_BASE_PATH = path.join(__dirname, '../../../eduhub/'); // 使用 __dirname 确保相对路径正确
+
+// 使用 path.join 拼接文件路径
+const filePath = path.join(EDUHUB_BASE_PATH, 'account.json');
+const dify_keys = path.join(EDUHUB_BASE_PATH, 'dify_keys.json');
+const studentChatPath = path.join(EDUHUB_BASE_PATH, 'studentChat.json');
+const teacherChatPath = path.join(EDUHUB_BASE_PATH, 'teacherChat.json');
+const promptPath = path.join(EDUHUB_BASE_PATH, 'prompt.json');
+const helpPath = path.join(EDUHUB_BASE_PATH, 'help.json');
+const lookPath = path.join(EDUHUB_BASE_PATH, 'looks.json');
+const configPath = path.join(EDUHUB_BASE_PATH, 'config.json');
+const whitelistPath = path.join(EDUHUB_BASE_PATH, 'whitelist.json');
+const blacklistPath = path.join(EDUHUB_BASE_PATH, 'blacklist.json');
+const openAiTsFile = path.join(EDUHUB_BASE_PATH, 'types/openai.ts');
+const aboutJsonPath = path.join(EDUHUB_BASE_PATH, 'public/config/about.json');
 
 const bcrypt = require('bcryptjs');
 const { exec } = require('child_process');
